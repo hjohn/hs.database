@@ -32,15 +32,10 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
-import javax.inject.Inject;
-import javax.inject.Named;
 import javax.inject.Provider;
-import javax.inject.Singleton;
 
 import org.eclipse.jdt.annotation.Nullable;
 
-@Named
-@Singleton
 public class Database {
   private static final Logger LOG = Logger.getLogger(Database.class.getName());
   private static final ThreadLocal<Transaction> CURRENT_TRANSACTION = new ThreadLocal<>();
@@ -51,7 +46,6 @@ public class Database {
 
   private final Provider<Connection> connectionProvider;
 
-  @Inject
   public Database(Provider<Connection> connectionProvider) {
     this.connectionProvider = connectionProvider;
   }

@@ -130,9 +130,10 @@ public class ConnectionPool implements AutoCloseable {
    * Connections can be returned to the pool by closing them.
    *
    * @throws TimeOutException when the time out expired while attempting to get a connection
+   * @throws InterruptedException when interrupted while waiting for a connection to become available
    * @return a new Connection object.
    */
-  public Connection getConnection() {
+  public Connection getConnection() throws InterruptedException {
     synchronized(this) {
       closeIdleConnections();
 
@@ -141,13 +142,8 @@ public class ConnectionPool implements AutoCloseable {
       }
     }
 
-    try {
-      if(!semaphore.tryAcquire(timeOutMillis, TimeUnit.MILLISECONDS)) {
-        throw new TimeOutException("Unable to acquire connection in " + timeOutMillis + " ms");
-      }
-    }
-    catch(InterruptedException e) {
-      throw new IllegalStateException("Interrupted while waiting for a database connection (semaphore = " + semaphore + ")", e);
+    if(!semaphore.tryAcquire(timeOutMillis, TimeUnit.MILLISECONDS)) {
+      throw new TimeOutException("Unable to acquire connection in " + timeOutMillis + " ms");
     }
 
     try {

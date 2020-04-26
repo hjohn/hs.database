@@ -11,7 +11,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.logging.Logger;
 
-import javax.inject.Inject;
 import javax.inject.Provider;
 
 public class DatabaseUpdater {
@@ -20,7 +19,6 @@ public class DatabaseUpdater {
   private final Provider<Connection> connectionProvider;
   private final DatabaseStatementTranslator translator;
 
-  @Inject
   public DatabaseUpdater(Provider<Connection> connectionProvider, DatabaseStatementTranslator translator) {
     this.connectionProvider = connectionProvider;
     this.translator = translator;
