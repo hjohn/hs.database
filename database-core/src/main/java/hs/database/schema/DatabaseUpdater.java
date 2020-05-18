@@ -4,12 +4,14 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.LineNumberReader;
+import java.net.URL;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 
 import javax.inject.Provider;
 
@@ -25,26 +27,65 @@ public class DatabaseUpdater {
   }
 
   public void updateDatabase(String resourcePath) {
-    int version = getDatabaseVersion();
+    Version version = getDatabaseVersion();
+    Version currentVersion = version;
 
     try {
-      for(;;) {
-        version++;
+      if(version == Version.ZERO) {
+        // Find highest major version first if starting from scratch:
+        for(;;) {
+          String scriptName = resourcePath + "/db-v" + version.nextMajor() + ".sql";
 
-        String scriptName = String.format(resourcePath + "/db-v%04d.sql", version);
+          LOGGER.fine("Checking for highest major database version script at: " + scriptName);
 
-        LOGGER.fine("Checking for newer database version update script at: " + scriptName);
+          URL url = getClass().getClassLoader().getResource(scriptName);
 
-        try(InputStream sqlStream = getClass().getClassLoader().getResourceAsStream(scriptName)) {
-          if(sqlStream == null) {
-            version--;
+          if(url == null) {
             break;
           }
 
+          version = version.nextMajor();
+        }
+
+        LOGGER.info("Creating initial database from version: " + version);
+      }
+      else {
+        version = version.nextMinor();
+      }
+
+      for(;;) {
+        String scriptName = resourcePath + "/db-v" + version + ".sql";
+
+        LOGGER.fine("Checking for newer database version update script at: " + scriptName);
+
+        URL url = getClass().getClassLoader().getResource(scriptName);
+
+        if(url == null) {
+          version = version.nextMajor();
+
+          scriptName = resourcePath + "/db-v" + version + ".sql";
+
+          LOGGER.fine("Checking for newer major database version: " + version);
+
+          if(getClass().getClassLoader().getResource(scriptName) != null) {
+            setDatabaseVersion(version);
+
+            currentVersion = version;
+            version = version.nextMinor();
+            continue;  // major version found, although the first new major version script must be skipped, more minor versions may follow
+          }
+
+          break;  // no major version found after checking minor versions, database is up to date now
+        }
+
+        try(InputStream sqlStream = url.openStream()) {
           LOGGER.info("Updating database to version " + version);
 
           try {
             applyUpdateScript(version, sqlStream);
+
+            currentVersion = version;
+            version = version.nextMinor();
           }
           catch (Exception e) {
             throw new DatabaseUpdateException("Exception while executing update script: " + scriptName, e);
@@ -52,7 +93,7 @@ public class DatabaseUpdater {
         }
       }
 
-      LOGGER.info("Database up to date at version " + version);
+      LOGGER.info("Database up to date at version " + currentVersion);
     }
     catch(IOException | SQLException e) {
       throw new IllegalStateException(e);
@@ -62,7 +103,7 @@ public class DatabaseUpdater {
   /**
    * Sets the database version.  Useful for debugging scripts.
    */
-  public void setDatabaseVersion(int version) {
+  public void setDatabaseVersion(Version version) {
     try {
       try(Connection connection = connectionProvider.get()) {
         try {
@@ -86,7 +127,7 @@ public class DatabaseUpdater {
     }
   }
 
-  private static void updateDatabaseVersion(int version, Connection connection) throws SQLException {
+  private static void updateDatabaseVersion(Version version, Connection connection) throws SQLException {
     try(PreparedStatement statement = connection.prepareStatement("UPDATE dbinfo SET value = '" + version + "' WHERE name = 'version'")) {
       if(statement.executeUpdate() != 1) {
         throw new IllegalStateException("Unable to update version information to " + version);
@@ -94,7 +135,7 @@ public class DatabaseUpdater {
     }
   }
 
-  private void applyUpdateScript(int version, InputStream sqlStream) throws SQLException, IOException {
+  private void applyUpdateScript(Version version, InputStream sqlStream) throws SQLException, IOException {
     try(Connection connection = connectionProvider.get()) {
       try {
         connection.setAutoCommit(false);
@@ -150,7 +191,7 @@ public class DatabaseUpdater {
     }
   }
 
-  private int getDatabaseVersion() {
+  private Version getDatabaseVersion() {
     try(Connection connection = connectionProvider.get()) {
       DatabaseMetaData dbm = connection.getMetaData();
 
@@ -159,14 +200,14 @@ public class DatabaseUpdater {
         if(!rs1.next() && !rs2.next()) {
           LOGGER.fine("No dbinfo table exists, returning version 0");
 
-          return 0;
+          return Version.ZERO;
         }
       }
 
       try(PreparedStatement statement = connection.prepareStatement("SELECT value FROM dbinfo WHERE name = 'version'")) {
         try(ResultSet rs = statement.executeQuery()) {
           if(rs.next()) {
-            return Integer.parseInt(rs.getString("value"));
+            return new Version(rs.getString("value"));
           }
         }
       }
@@ -175,6 +216,49 @@ public class DatabaseUpdater {
       throw new IllegalStateException("Unable to get version information from the database", e);
     }
 
-    return 0;
+    return Version.ZERO;
+  }
+
+  public static class Version {
+    static final Pattern VERSION_PATTERN = Pattern.compile("([0-9]+\\.)?[0-9]+");
+    static final Version ZERO = new Version("0.0");
+
+    final int major;
+    final int minor;
+
+    Version(String version) {
+      if(!VERSION_PATTERN.matcher(version).matches()) {
+        throw new IllegalArgumentException("Unsupported version format, should be <major>.<minor>: " + version);
+      }
+
+      String[] parts = version.split("\\.");
+
+      if(parts.length == 1) {
+        this.major = 0;
+        this.minor = Integer.parseInt(parts[0]);
+      }
+      else {
+        this.major = Integer.parseInt(parts[0]);
+        this.minor = Integer.parseInt(parts[1]);
+      }
+    }
+
+    public Version(int major, int minor) {
+      this.major = major;
+      this.minor = minor;
+    }
+
+    Version nextMinor() {
+      return new Version(major, minor + 1);
+    }
+
+    Version nextMajor() {
+      return new Version(major + 1, 0);
+    }
+
+    @Override
+    public String toString() {
+      return major + "." + minor;
+    }
   }
 }
