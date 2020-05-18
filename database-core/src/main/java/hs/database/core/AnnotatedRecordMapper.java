@@ -292,7 +292,7 @@ public final class AnnotatedRecordMapper<T> implements RecordMapper<T> {
 
   @Override
   public void setGeneratedKey(T object, Object key) {
-    if(idColumn == null) {
+    if(idColumn == null || !isIdGenerated) {  // some drivers return a generated id even if none is present in defined columns
       return;
     }
 
