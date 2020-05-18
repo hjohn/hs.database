@@ -19,6 +19,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.when;
 
+@SuppressWarnings("static-method")
 public class AnnotedRecordMapperTest {
   @Mock private Database.Transaction transaction;
   @Mock private Database database;
@@ -32,6 +33,7 @@ public class AnnotedRecordMapperTest {
   private TestCar testCar;
   private TestOption testOption;
 
+  @SuppressWarnings("resource")
   @Before
   public void before() {
     MockitoAnnotations.initMocks(this);
